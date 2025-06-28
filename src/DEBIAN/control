@@ -1,6 +1,0 @@
-Version: 0.0.0
-Architecture: all
-Depends: php8.2-cli
-Package: command-parser
-Description: Shell-style Command-line Parser
-Maintainer: Ali Kamel <ali.kamel.dev@gmail.com>
