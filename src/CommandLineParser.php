@@ -8,7 +8,7 @@ namespace CommandParser;
  * @api
  * @final
  * @since 0.1.0
- * @version 1.0.0
+ * @version 1.1.0
  * @package command-parser
  * @author Ali M. Kamel <ali.kamel.dev@gmail.com>
  */
@@ -105,7 +105,7 @@ final class CommandLineParser {
      * @api
      * @final
      * @since 1.0.0
-     * @version 1.0.0
+     * @version 1.1.0
      * 
      * @param array<string> $commandLine  The command line arguments.
      * @param Specs\Command $commandSpecs  The specifications of the command to parse.
@@ -116,6 +116,9 @@ final class CommandLineParser {
      * @throws Exceptions\OptionNotFoundException If an option is not found in the command specs.
      * @throws Exceptions\MissingOptionArgumentException If an option argument is missing.
      * @throws Exceptions\OptionRepetitionDeniedException If an option is repeated but not allowed.
+     * @throws Exceptions\MissingRequiredOptionException If a required option is missing.
+     * @throws Exceptions\OptionTokenAlreadyDefinedException If an option token is defined more than once in the command specs.
+     * @throws Exceptions\MissingRequiredOperandException If a required operand is missing.
      */
     public final function parse(array $commandLine, Specs\Command $commandSpecs): ?Command {
 
@@ -134,6 +137,8 @@ final class CommandLineParser {
 
             throw new Exceptions\InvalidCommandSpecsException('Invalid command name: ' . $commandName);
         }
+
+        $this->validateCommandSpecs($commandSpecs);
 
         foreach ($commandLine as $i => $token) {
 
@@ -176,24 +181,11 @@ final class CommandLineParser {
 
             if ($this->canAcceptSubCommands && $commandSpecs->hasSubCommand($token)) {
 
-                try {
-
-                    $this->subCommands[] = (new static)->parse(
-                        array_slice($commandLine, $i),
-                        $commandSpecs->getSubCommand($token)
-                    );
-                } catch (Exceptions\OptionNotFoundException $e) {
-
-                    throw new Exceptions\OptionNotFoundException($e->option, "{$commandSpecs->name} {$e->command}");
-
-                } catch (Exceptions\MissingOptionArgumentException $e) {
-
-                    throw new Exceptions\MissingOptionArgumentException("{$commandSpecs->name} {$e->command}", $e->optionToken);
-                    
-                } catch (Exceptions\OptionRepetitionDeniedException $e) {
-
-                    throw new Exceptions\OptionRepetitionDeniedException("{$commandSpecs->name} {$e->command}", $e->optionName);
-                }
+                $this->parseSubCommand(
+                    commandLine:  array_slice($commandLine, $i),
+                    commandSpecs: $commandSpecs->getSubCommand($token),
+                    mainCommandSPecs: $commandSpecs
+                );
 
                 break;
             }
@@ -206,13 +198,71 @@ final class CommandLineParser {
             throw new Exceptions\MissingOptionArgumentException($commandSpecs->name, "-{$this->incompleteOptionToken->token}");
         }
 
-        return new Command(
+        $command = new Command(
 
             name: $commandSpecs->name,
             options: array_values($this->options),
             operands: $this->operands,
             subCommands: $this->subCommands
         );
+
+        $this->validateCommand($command, $commandSpecs);
+
+        return $command;
+    }
+
+    /**
+     * Parses a sub-command from the command line.
+     * 
+     * @internal
+     * @since 1.1.0
+     * @version 1.0.0
+     * 
+     * @param string[] $commandLine
+     * @param Specs\Command $commandSpecs
+     * @param Specs\Command $mainCommandSPecs
+     * 
+     * @throws Exceptions\OptionNotFoundException
+     * @throws Exceptions\MissingOptionArgumentException
+     * @throws Exceptions\OptionRepetitionDeniedException
+     * @throws Exceptions\MissingRequiredOptionException
+     * @throws Exceptions\OptionTokenAlreadyDefinedException
+     * @throws Exceptions\MissingRequiredOperandException
+     * @return void
+     */
+    private function parseSubCommand(array $commandLine, Specs\Command $commandSpecs, Specs\Command $mainCommandSPecs): void {
+
+        try {
+
+            $this->subCommands[] = (new static)->parse($commandLine, $commandSpecs);
+            
+        } catch (Exceptions\OptionNotFoundException $e) {
+
+            throw new Exceptions\OptionNotFoundException($e->option, "{$mainCommandSPecs->name} {$e->command}");
+
+        } catch (Exceptions\MissingOptionArgumentException $e) {
+
+            throw new Exceptions\MissingOptionArgumentException("{$mainCommandSPecs->name} {$e->command}", $e->optionToken);
+            
+        } catch (Exceptions\OptionRepetitionDeniedException $e) {
+
+            throw new Exceptions\OptionRepetitionDeniedException("{$mainCommandSPecs->name} {$e->command}", $e->optionName);
+        
+        } catch (Exceptions\MissingRequiredOptionException $e) {
+
+            throw new Exceptions\MissingRequiredOptionException("{$mainCommandSPecs->name} {$e->command}", $e->optionName);
+
+        } catch (Exceptions\OptionTokenAlreadyDefinedException $e) {
+
+            throw new Exceptions\OptionTokenAlreadyDefinedException(
+                token: $e->token,
+                option: $e->option,
+                commandName: "{$mainCommandSPecs->name} {$e->commandName}"
+            );
+        } catch (Exceptions\MissingRequiredOperandException $e) {
+
+            throw new Exceptions\MissingRequiredOperandException("{$mainCommandSPecs->name} {$e->command}", $e->operand);
+        }
     }
 
     /**
@@ -336,7 +386,7 @@ final class CommandLineParser {
      * 
      * @internal
      * @since 1.0.0
-     * @version 1.0.0
+     * @version 1.1.0
      * 
      * @param string        $token        The token to parse.
      * @param Specs\Command $commandSpecs The command specifications.
@@ -346,14 +396,141 @@ final class CommandLineParser {
     private function parseOperand(string $token, Specs\Command $commandSpecs): void {
 
         $operandIndex = count($this->operands);
+        $operandSpecs = $commandSpecs->getOperand(index: $operandIndex);
+        $operandValue = $token;
+
+        if (($operandSpecs?->isVariadic ?? false)) {
+            
+            $operandValue = [ $token ];
+        }
+
+        if ($operandIndex > 0 && ($commandSpecs->getOperand(index: $operandIndex - 1)?->isVariadic ?? false)) {
+
+            $operand = array_pop($this->operands);
+            $operandValue = [ ...$operand->value, $token ];
+        }
 
         $this->operands[] = new Operand(
             
-            value: $token,
+            value: $operandValue,
             index: $operandIndex,
-            name:  $commandSpecs->getOperand(index: $operandIndex)?->name
+            name:  $operandSpecs?->name
         );
         
         $this->canAcceptSubCommands = false;
+    }
+
+    /**
+     * Validates the command specifications for duplicate option tokens.
+     * 
+     * @internal
+     * @since 1.1.0
+     * @version 1.0.0
+     * 
+     * @param Specs\Command $commandSpecs
+     * @throws Exceptions\OptionTokenAlreadyDefinedException
+     * @return void
+     */
+    private function validateCommandSpecs(Specs\Command $commandSpecs): void {
+
+        foreach ($commandSpecs->getOptionsNames() as $optionName) {
+
+            $optionSpecs = $commandSpecs->getOption($optionName);
+
+            foreach ($optionSpecs->getTokens() as $optionToken) {
+
+                if (!is_null($this->getOption($commandSpecs, $optionToken, $optionSpecs))) {
+
+                    throw new Exceptions\OptionTokenAlreadyDefinedException(
+                        token: $optionToken->type->value . $optionToken->token,
+                        option: $optionSpecs->name,
+                        commandName: $commandSpecs->name
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Retrieves an option from the command specifications based on the token.
+     * 
+     * @internal
+     * @since 1.1.0
+     * @version 1.0.0
+     * 
+     * @param Specs\Command $commandSpecs
+     * @param Specs\OptionToken $token
+     * @param Specs\Option $ignore
+     * @return Specs\Option|null
+     */
+    private function getOption(Specs\Command $commandSpecs, Specs\OptionToken $token, Specs\Option $ignore): ?Specs\Option {
+
+        foreach ($commandSpecs->getOptionsNames() as $optionName) {
+            
+            $optionSpecs = $commandSpecs->getOption($optionName);
+
+            if ($optionSpecs->name == $ignore->name) {
+
+                continue;
+            }
+
+            if (!is_null($optionSpecs->getToken(token: $token->token, type: $token->type))) {
+
+                return $optionSpecs;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Validates the command against its specifications.
+     * 
+     * @internal
+     * @since 1.1.0
+     * @version 1.0.0
+     * 
+     * @param Command $command
+     * @param Specs\Command $commandSpecs
+     * @throws Exceptions\MissingRequiredOptionException
+     * @throws Exceptions\MissingRequiredOperandException
+     * @return void
+     */
+    private function validateCommand(Command $command, Specs\Command $commandSpecs): void {
+
+        foreach ($commandSpecs->getOptionsNames() as $optionName) {
+            
+            $optionSpecs = $commandSpecs->getOption($optionName);
+
+            if ($optionSpecs->isRequired) {
+
+                $exists = count(array_filter(
+                    $command->options,
+                    fn (Option $option) => $option->name == $optionSpecs->name
+                ));
+
+                if (!$exists) {
+
+                    throw new Exceptions\MissingRequiredOptionException(
+                        command: $commandSpecs->name,
+                        optionName: $optionSpecs->name
+                    );
+                }
+            }
+        }
+
+        foreach ($commandSpecs->getOperands() as $operand) {
+
+            if ($operand->isRequired) {
+
+                if (is_null($command->operands[$operand->index] ?? null)) {
+
+                    throw new Exceptions\MissingRequiredOperandException(
+                        command: $commandSpecs->name,
+                        operand: $operand->name ?? $operand->index,
+                    );
+                }
+            }
+        }
     }
 }

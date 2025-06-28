@@ -10,7 +10,7 @@ use CommandParser\Exceptions\OptionTokenAlreadyDefinedException;
  * @api
  * @final
  * @since 0.1.0
- * @version 1.0.0
+ * @version 1.1.0
  * @package command-parser
  * @author Ali M. Kamel <ali.kamel.dev@gmail.com>
  */
@@ -31,21 +31,23 @@ final class Option {
      * @api
      * @final
      * @since 1.0.0
-     * @version 1.0.0
+     * @version 1.1.0
      *
      * @param string  $name
+     * @param array   $tokens
      * @param ?string $description
      * @param bool    $isRepeatable
      * @param bool    $isFlag
-     * @param array   $tokens
+     * @param bool    $isRequired
      */
     public final function __construct(
 
         public readonly string  $name,
+                        array   $tokens,
         public readonly ?string $description  = null,
         public readonly bool    $isRepeatable = false,
         public readonly bool    $isFlag       = false,
-        array $tokens
+        public readonly bool    $isRequired   = false,
     ) {
 
         $this->tokens = [];
@@ -118,5 +120,10 @@ final class Option {
         }
 
         return null;
+    }
+
+    public final function getTokens(): array {
+
+        return $this->tokens;
     }
 }

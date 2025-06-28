@@ -10,7 +10,7 @@ use CommandParser\Exceptions\{ CommandAlreadyDefinedException, CommandOperandAlr
  * @api
  * @final
  * @since 0.1.0
- * @version 1.0.0
+ * @version 1.1.0
  * @package command-parser
  * @author Ali M. Kamel <ali.kamel.dev@gmail.com>
  */
@@ -106,7 +106,7 @@ final class Command {
      * @api
      * @final
      * @since 1.0.0
-     * @version 1.0.0
+     * @version 1.1.0
      * 
      * @param Operand $operand
      * @return Command
@@ -125,7 +125,7 @@ final class Command {
             throw new CommandOperandAlreadyDefinedException($operand->name, $this->name);
         }
 
-        $this->operands[] = $operand;
+        $this->operands[ $operand->index ] = $operand;
 
         return $this;
     }
@@ -187,6 +187,21 @@ final class Command {
     }
 
     /**
+     * Retrieves the operands of this command.
+     * 
+     * @api
+     * @final
+     * @since 1.1.0
+     * @version 1.0.0
+     * 
+     * @return Operand[]
+     */
+    public final function getOperands(): array {
+
+        return $this->operands;
+    }
+
+    /**
      * Gets an option by its name or token.
      * 
      * @api
@@ -219,27 +234,39 @@ final class Command {
     }
 
     /**
+     * Retrieves the names of the options of this command.
+     * 
+     * @api
+     * @final
+     * @since 1.1.0
+     * @version 1.0.0
+     * 
+     * @return string[]
+     */
+    public final function getOptionsNames(): array {
+
+        return array_keys($this->options);
+    }
+
+    /**
      * Gets a sub-command by its name.
      * 
      * @api
      * @final
      * @since 1.0.0
-     * @version 1.0.0
+     * @version 1.1.0
      * 
      * @param string $name
      * @return Command|null
      */
     public final function getSubCommand(string $name): ?Command {
 
-        foreach ($this->subCommands as $subCommand) {
+        return $this->subCommands[$name] ?? null;
+    }
 
-            if ($subCommand->name === $name) {
+    public final function getSubCommandsNames(): array {
 
-                return $subCommand;
-            }
-        }
-
-        return null;
+        return array_keys($this->subCommands);
     }
 
     /**
