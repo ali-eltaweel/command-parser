@@ -2,17 +2,21 @@
 
 namespace CommandParser;
 
+use Logger\{ EmitsLogs, Logger };
+
 /**
  * Commandline Parser.
  * 
  * @api
  * @final
  * @since 0.1.0
- * @version 1.1.0
+ * @version 1.2.0
  * @package command-parser
  * @author Ali M. Kamel <ali.kamel.dev@gmail.com>
  */
 final class CommandLineParser {
+
+    use EmitsLogs;
 
     /**
      * Whether to treat all tokens as operands after encountering a '--' token.
@@ -79,16 +83,45 @@ final class CommandLineParser {
     private array $subCommands;
 
     /**
+     * The logger instance.
+     * 
+     * @internal
+     * @since 1.2.0
+     * 
+     * @var Logger|null $logger
+     */
+    protected ?Logger $logger = null;
+
+    /**
+     * Sets the logger instance.
+     * 
+     * @api
+     * @since 1.2.0
+     * @version 1.0.0
+     * 
+     * @param Logger|null $logger
+     * @return void
+     */
+    public function setLogger(?Logger $logger): void {
+
+        $this->logger = $logger;
+    }
+
+    /**
      * Resets the parser state.
      * 
      * @api
      * @final
      * @since 1.0.0
-     * @version 1.0.0
+     * @version 1.1.0
      * 
      * @return void
      */
     public final function reset () {
+
+        $logUnit = static::class . '::' . __FUNCTION__;
+
+        $this->infoLog(fn () => [ 'Resetting parser state' ], $logUnit);
 
         $this->treatAllTokensAsOperands = false;
         $this->incompleteOptionToken    = null;
@@ -97,6 +130,18 @@ final class CommandLineParser {
         $this->operands                 = [];
         $this->canAcceptSubCommands     = true;
         $this->subCommands              = [];
+
+        $this->debugLog(fn () => [
+            'Parser state set' => [
+                'treatAllTokensAsOperands'  => $this->treatAllTokensAsOperands,
+                'incompleteOptionToken'     => $this->incompleteOptionToken,
+                'incompleteOption'          => $this->incompleteOption,
+                'options'                   => $this->options,
+                'operands'                  => $this->operands,
+                'canAcceptSubCommands'      => $this->canAcceptSubCommands,
+                'subCommands'               => $this->subCommands,
+            ]
+        ], $logUnit);
     }
 
     /**
@@ -105,7 +150,7 @@ final class CommandLineParser {
      * @api
      * @final
      * @since 1.0.0
-     * @version 1.1.0
+     * @version 1.2.0
      * 
      * @param array<string> $commandLine  The command line arguments.
      * @param Specs\Command $commandSpecs  The specifications of the command to parse.
@@ -122,11 +167,25 @@ final class CommandLineParser {
      */
     public final function parse(array $commandLine, Specs\Command $commandSpecs): ?Command {
 
+        $logUnit = static::class . '::' . __FUNCTION__;
+
+        $this->infoLog(fn () => [
+            'Parsing command line' => [
+                'commandLine'  => $commandLine
+            ]
+        ], $logUnit);
+        $this->debugLog(fn () => [
+            'Parsing command line' => [
+                'commandLine'  => $commandLine,
+                'commandSpecs' => $commandSpecs
+            ]
+        ], $logUnit);
+
         $this->reset();
 
-        $this->commandSpecs = $commandSpecs;
-
         if (empty($commandLine)) {
+
+            $this->warningLog(fn () => [ 'Skipping empty command line' ], $logUnit);
             
             return null;
         }
@@ -135,14 +194,45 @@ final class CommandLineParser {
 
         if ($commandName != $commandSpecs->name) {
 
+            $this->errorLog(fn () => [
+                'Invalid command name' => [
+                    'fromCommandLine' => $commandName,
+                    'fromSpecs'       => $commandSpecs->name
+                ]
+            ], $logUnit);
+
             throw new Exceptions\InvalidCommandSpecsException('Invalid command name: ' . $commandName);
         }
 
+        $this->infoLog(fn () => [ 'Validating command specs' ], $logUnit);
+
         $this->validateCommandSpecs($commandSpecs);
+
+        $this->infoLog(fn () => [
+            'Processing command line' => [
+                'commandLine'  => $commandLine
+            ]
+        ], $logUnit);
 
         foreach ($commandLine as $i => $token) {
 
+            $this->debugLog(fn () => [
+                'Parsing command line token' => [
+                    'commandLine'  => $commandLine,
+                    'tokenIndex'   => $i,
+                    'token'        => $token
+                ]
+            ], $logUnit);
+
             if (empty($token)) {
+
+                $this->debugLog(fn () => [
+                    'Skipping empty token' => [
+                        'commandLine'  => $commandLine,
+                        'tokenIndex'   => $i,
+                        'token'        => $token
+                    ]
+                ], $logUnit);
 
                 continue;
             }
@@ -154,12 +244,27 @@ final class CommandLineParser {
             }
 
             if ($token == '--') {
+
+                $this->debugLog(fn () => [
+                    'Treating all upcoming tokens as operands; `--` encountered' => [
+                        'commandLine'  => $commandLine,
+                        'tokenIndex'   => $i,
+                    ]
+                ], $logUnit);
                 
                 $this->treatAllTokensAsOperands = true;
                 continue;
             }
 
             if (!is_null($this->incompleteOption)) {
+
+                $this->debugLog(fn () => [
+                    'Completing previous option' => [
+                        'commandLine'  => $commandLine,
+                        'tokenIndex'   => $i,
+                        'token'        => $token
+                    ]
+                ], $logUnit);
 
                 $this->addOption($this->incompleteOption, $token);
                 $this->incompleteOption      = null;
@@ -205,6 +310,13 @@ final class CommandLineParser {
             operands: $this->operands,
             subCommands: $this->subCommands
         );
+
+        $this->infoLog(fn () => [
+            'Checking required options & operands' => [ 'commandLine'  => $commandLine ]
+        ], $logUnit);
+        $this->debugLog(fn () => [
+            'Checking required options & operands' => [ 'commandLine'  => $commandLine, 'commandSpecs' => $commandSpecs ]
+        ], $logUnit);
 
         $this->validateCommand($command, $commandSpecs);
 
@@ -270,7 +382,7 @@ final class CommandLineParser {
      * 
      * @internal
      * @since 1.0.0
-     * @version 1.0.0
+     * @version 1.1.0
      * 
      * @param string        $token        The token to parse.
      * @param Specs\Command $commandSpecs The command specifications.
@@ -282,14 +394,35 @@ final class CommandLineParser {
      */
     private function parseStandardOption(string $token, Specs\Command $commandSpecs): void {
 
+        $logUnit = static::class . '::' . __FUNCTION__;
+
+        $this->infoLog(fn () => [ 'Parsing standard option' => [ 'token' => $token ] ], $logUnit);
+        $this->debugLog(fn () => [
+            'Parsing standard option' => [ 'token' => $token, 'commandSpecs' => $commandSpecs ]
+        ], $logUnit);
+
         foreach (str_split(substr($token, 1)) as $i => $c) {
 
+            $this->debugLog(fn () => [
+                'Parsing standard option' => [
+                    'token' => $token, 'commandSpecs' => $commandSpecs, 'index' => $i, 'optionToken' => $c
+                ]
+            ], $logUnit);
+
             if (is_null($optionSpecs = $commandSpecs->getOption(token: $c, tokenType: Specs\OptionTokenType::Standard))) {
+
+                $this->errorLog(fn () => [
+                    'Standard option not found' => [ 'optionToken' => $c, 'commandSpecs' => $commandSpecs ]
+                ], $logUnit);
 
                 throw new Exceptions\OptionNotFoundException("-$c", $commandSpecs->name);
             }
 
             if (!$optionSpecs->isRepeatable && array_key_exists($optionSpecs->name, $this->options)) {
+
+                $this->errorLog(fn () => [
+                    'Standard option repetition denied' => [ 'optionToken' => $c, 'commandSpecs' => $commandSpecs ]
+                ], $logUnit);
 
                 throw new Exceptions\OptionRepetitionDeniedException($commandSpecs->name, $optionSpecs->name);
             }
@@ -302,10 +435,24 @@ final class CommandLineParser {
 
             if (empty($optionValue = substr($token, 2 + $i))) {
 
+                $this->debugLog(fn () => [
+                    'Marking standard option as incomplete' => [
+                        'optionToken'   => $c,
+                        'commandSpecs'  => $commandSpecs
+                    ]
+                ], $logUnit);
+
                 $this->incompleteOption      = $optionSpecs;
                 $this->incompleteOptionToken = $optionSpecs->getToken(token: $c, type: Specs\OptionTokenType::Standard);
             } else {
 
+                $this->infoLog(fn () => [
+                    'Adding standard option' => [
+                        'optionToken'   => $c,
+                        'optionValue'   => $optionValue,
+                        'commandSpecs'  => $commandSpecs
+                    ]
+                ], $logUnit);
                 $this->addOption($optionSpecs, $optionValue);
                 return;
             }
@@ -317,7 +464,7 @@ final class CommandLineParser {
      * 
      * @internal
      * @since 1.0.0
-     * @version 1.0.0
+     * @version 1.1.0
      * 
      * @param string        $token        The token to parse.
      * @param Specs\Command $commandSpecs The command specifications.
@@ -330,21 +477,45 @@ final class CommandLineParser {
      */
     private function parseExtendedOption(string $token, Specs\Command $commandSpecs): void {
 
+        $logUnit = static::class . '::' . __FUNCTION__;
+
+        $this->infoLog(fn () => [ 'Parsing extended option' => [ 'token' => $token ] ], $logUnit);
+        $this->debugLog(fn () => [
+            'Parsing extended option' => [ 'token' => $token, 'commandSpecs' => $commandSpecs ]
+        ], $logUnit);
+
         $optionTokens = explode('=', substr($token, 2), 2);
         $optionToken  = $optionTokens[0];
         $optionValue  = $optionTokens[1] ?? null;
+        $this->debugLog(fn () => [
+            'Parsing extended option' => [
+                'token' => $token, 'commandSpecs' => $commandSpecs, 'optionName' => $optionToken, 'optionValue' => $optionValue
+            ]
+        ], $logUnit);
 
         if (is_null($optionSpecs = $commandSpecs->getOption(token: $optionToken, tokenType: Specs\OptionTokenType::Extended))) {
+
+            $this->errorLog(fn () => [
+                'Extended option not found' => [ 'optionToken' => $optionToken, 'commandSpecs' => $commandSpecs ]
+            ], $logUnit);
 
             throw new Exceptions\OptionNotFoundException("--$optionToken", $commandSpecs->name);
         }
 
         if (!$optionSpecs->isRepeatable && array_key_exists($optionSpecs->name, $this->options)) {
 
+            $this->errorLog(fn () => [
+                'Extended option repetition denied' => [ 'optionToken' => $optionToken, 'commandSpecs' => $commandSpecs ]
+            ], $logUnit);
+
             throw new Exceptions\OptionRepetitionDeniedException($commandSpecs->name, $optionSpecs->name);
         }
         
         if ($optionSpecs->isFlag) {
+
+            $this->warningLog(fn () => [
+                'Ignoring extended option\'s value' => [ 'optionToken' => $optionToken, 'commandSpecs' => $commandSpecs ]
+            ], $logUnit);
 
             $this->options[] = new Option(name: $optionSpecs->name);
             return;
@@ -352,8 +523,20 @@ final class CommandLineParser {
 
         if (is_null($optionValue)) {
 
+            $this->errorLog(fn () => [
+                'Missing extended option argument' => [ 'optionToken' => $optionToken, 'commandSpecs' => $commandSpecs ]
+            ], $logUnit);
+
             throw new Exceptions\MissingOptionArgumentException($commandSpecs->name, "--$optionToken");
         }
+
+        $this->infoLog(fn () => [
+            'Adding extended option' => [
+                'optionToken'   => $optionToken,
+                'optionValue'   => $optionValue,
+                'commandSpecs'  => $commandSpecs
+            ]
+        ], $logUnit);
 
         $this->addOption($optionSpecs, $optionValue);
     }
@@ -386,7 +569,7 @@ final class CommandLineParser {
      * 
      * @internal
      * @since 1.0.0
-     * @version 1.1.0
+     * @version 1.2.0
      * 
      * @param string        $token        The token to parse.
      * @param Specs\Command $commandSpecs The command specifications.
@@ -395,9 +578,19 @@ final class CommandLineParser {
      */
     private function parseOperand(string $token, Specs\Command $commandSpecs): void {
 
+        $logUnit = static::class . '::' . __FUNCTION__;
+
+        $this->infoLog(fn () => [ 'Parsing operand' => [ 'token' => $token ] ], $logUnit);
+
         $operandIndex = count($this->operands);
         $operandSpecs = $commandSpecs->getOperand(index: $operandIndex);
         $operandValue = $token;
+
+        $this->debugLog(fn () => [
+            'Parsing operand' => [
+                'token' => $token, 'commandSpecs' => $commandSpecs, 'operandSpecs' => $operandSpecs
+            ]
+        ], $logUnit);
 
         if (($operandSpecs?->isVariadic ?? false)) {
             
@@ -409,6 +602,12 @@ final class CommandLineParser {
             $operand = array_pop($this->operands);
             $operandValue = [ ...$operand->value, $token ];
         }
+
+        $this->infoLog(fn () => [
+            'Adding operand' => [
+                'index' => $operandIndex, 'name' => $operandSpecs?->name, 'value' => $operandValue
+            ]
+        ], $logUnit);
 
         $this->operands[] = new Operand(
             
